@@ -80,7 +80,7 @@ def parse_public_key(public_key_pem: str):
         return None
 
 
-def decrypt_message(encrypted_message: bytes, private_key_pem: str)-> str|None:
+def decrypt_message(encrypted_message: bytes, private_key_pem: str) -> str | None:
     """Decrypt a message using the provided private key."""
     private_key = parse_private_key(private_key_pem)
     if private_key is None:
@@ -97,7 +97,11 @@ def decrypt_message(encrypted_message: bytes, private_key_pem: str)-> str|None:
 
 
 def on_receive_message(b64_message: str):
-    print("<<< Receiving Encrypted Message:\n--------------{ Encrypted Base64 Message }\n"+b64_message, flush=True)
+    print(
+        "<<< Receiving Encrypted Message:\n--------------{ Encrypted Base64 Message }\n"
+        + b64_message,
+        flush=True,
+    )
 
     encrypted_message_bytes = base64_decode(b64_message)
     if encrypted_message_bytes is None:
@@ -108,7 +112,12 @@ def on_receive_message(b64_message: str):
     if decrypted_message is None:
         print("[!] Failed to decrypt message.")
         return
-    print("--------------{ Clear Message }\n"+decrypted_message+"\n--------------|END|\n", flush=True)
+    print(
+        "--------------{ Clear Message }\n"
+        + decrypted_message
+        + "\n--------------|END|\n",
+        flush=True,
+    )
 
 
 async def listener_routine(serial_connection: Serial, raw_input_queue: asyncio.Queue):
@@ -133,22 +142,18 @@ async def read_until_seperator_routine(
     try:
         inp = ""
         while True:
-            await asyncio.sleep(0.1)
-            if raw_input_queue.empty():
-                continue
-            while not raw_input_queue.empty():
-                tmp = raw_input_queue.get_nowait()
-                for c in tmp:
-                    inp += c
-                    if inp.endswith(sep):
-                        # TODO: send the input to the received messages queue
-                        inp = remove_last_n_chars(inp, len(sep))
-                        # todo: remove this later , only for testing
-                        # await serial_connection.write(
-                        #     f"{inp}{sep}".encode("utf-8")
-                        # )
-                        on_receive_message(inp)
-                        inp = ""
+            tmp = await raw_input_queue.get()
+            for c in tmp:
+                inp += c
+                if inp.endswith(sep):
+                    # TODO: send the input to the received messages queue
+                    inp = remove_last_n_chars(inp, len(sep))
+                    # todo: remove this later , only for testing
+                    # await serial_connection.write(
+                    #     f"{inp}{sep}".encode("utf-8")
+                    # )
+                    on_receive_message(inp)
+                    inp = ""
 
     except asyncio.QueueEmpty:
         pass  # Ignore empty queue errors
