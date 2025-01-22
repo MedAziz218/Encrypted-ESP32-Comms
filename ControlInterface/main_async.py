@@ -1,5 +1,10 @@
 import asyncio
 from asyncserial import Serial
+import base64
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+
+
 SEPERATOR = "\n"
 
 private_key_pem = """
@@ -27,11 +32,84 @@ EmfvHgH5rixn4+WT8sa3KW265IrnlfHjVRpGxRqGISf9ClyiK01acc+2EbUHqXyP
 +JYQwWf4+ooCYDgFAgMBAAE=
 -----END PUBLIC KEY-----
 """
+
+
 def remove_last_n_chars(input_str: str, n: int) -> str:
     """Remove the last n characters from the input string."""
     if n <= 0:
         return input_str
     return input_str[:-n] if n < len(input_str) else ""
+
+
+def base64_decode(base64_message: str) -> bytes:
+    """Decode a base64 encoded message."""
+    try:
+        decoded_bytes = base64.b64decode(base64_message)
+        return decoded_bytes
+    except Exception as e:
+        print(f"[!] Error decoding base64 message: {e}")
+        return None
+
+
+def base64_encode(message: str) -> str:
+    """Encode a message to base64."""
+    try:
+        message_bytes = message.encode("utf-8")
+        base64_bytes = base64.b64encode(message_bytes)
+        return base64_bytes
+    except Exception as e:
+        print(f"[!] Error encoding message to base64: {e}")
+        return None
+
+
+def parse_private_key(private_key_pem: str):
+    try:
+        return serialization.load_pem_private_key(
+            private_key_pem.encode(), password=None
+        )
+    except Exception as e:
+        print(f"[!] Error loading private key: {e}")
+        return None
+
+
+def parse_public_key(public_key_pem: str):
+    try:
+        return serialization.load_pem_public_key(public_key_pem.encode())
+    except Exception as e:
+        print(f"[!] Error loading public key: {e}")
+        return None
+
+
+def decrypt_message(encrypted_message: bytes, private_key_pem: str)-> str|None:
+    """Decrypt a message using the provided private key."""
+    private_key = parse_private_key(private_key_pem)
+    if private_key is None:
+        return None
+    try:
+        decrypted_message = private_key.decrypt(
+            encrypted_message,
+            padding.PKCS1v15(),  # PKCS#1 v1.5 padding
+        )
+        return decrypted_message.decode("utf-8")
+    except Exception as e:
+        print(f"[!] Error decrypting message: {e}")
+        return None
+
+
+def on_receive_message(b64_message: str):
+    print("<<< Receiving Encrypted Message:\n--------------{ Encrypted Base64 Message }\n"+b64_message, flush=True)
+
+    encrypted_message_bytes = base64_decode(b64_message)
+    if encrypted_message_bytes is None:
+        return
+
+    decrypted_message = decrypt_message(encrypted_message_bytes, private_key_pem)
+
+    if decrypted_message is None:
+        print("[!] Failed to decrypt message.")
+        return
+    print("--------------{ Clear Message }\n"+decrypted_message+"\n--------------|END|\n", flush=True)
+
 
 async def listener_routine(serial_connection: Serial, raw_input_queue: asyncio.Queue):
     """Task to read from the serial connection."""
@@ -46,6 +124,7 @@ async def listener_routine(serial_connection: Serial, raw_input_queue: asyncio.Q
     except asyncio.CancelledError:
         print("[!] Serial reader task cancelled. Exiting...")
         raise  # Re-raise to allow proper cleanup
+
 
 async def read_until_seperator_routine(
     serial_connection: Serial, raw_input_queue: asyncio.Queue, sep: str = SEPERATOR
@@ -62,13 +141,13 @@ async def read_until_seperator_routine(
                 for c in tmp:
                     inp += c
                     if inp.endswith(sep):
-                        #TODO: send the input to the received messages queue
+                        # TODO: send the input to the received messages queue
                         inp = remove_last_n_chars(inp, len(sep))
-                        print(inp, end="", flush=True)
-                        #todo: remove this later , only for testing
-                        await serial_connection.write(
-                            f"{inp}{sep}".encode("utf-8")
-                        )
+                        # todo: remove this later , only for testing
+                        # await serial_connection.write(
+                        #     f"{inp}{sep}".encode("utf-8")
+                        # )
+                        on_receive_message(inp)
                         inp = ""
 
     except asyncio.QueueEmpty:
@@ -92,7 +171,7 @@ async def main(COM_port="COM4"):
             listener_routine(serial_connection, input_queue)
         )
         handler_task = asyncio.create_task(
-            read_until_seperator_routine(serial_connection, input_queue,SEPERATOR)
+            read_until_seperator_routine(serial_connection, input_queue, SEPERATOR)
         )
         # Run until interrupted
         await asyncio.sleep(float("inf"))

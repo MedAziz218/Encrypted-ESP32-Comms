@@ -1,0 +1,26 @@
+from cryptography.hazmat.primitives import serialization
+
+private_key_pem = """
+-----BEGIN RSA PRIVATE KEY-----
+MIICWgIBAAKBgFs44W15Opn0ruNjtl8fY6eNmQir3AsKqj2UmZ7ShLegwob3oN1l
+sn0keL401eOzjv2t7ObD/stszZao4Ugmccb83ITjEmfvHgH5rixn4+WT8sa3KW26
+5IrnlfHjVRpGxRqGISf9ClyiK01acc+2EbUHqXyP+JYQwWf4+ooCYDgFAgMBAAEC
+gYAiQxfwTTMkdhFl2KK70YdVfEp5RktsXkIYxQJ586njal8F4GYsIbFLbXJoRmH7
+lwpi33t2JTFC6IfDSYTr23yqBJ/6DKiCa4ZsSQPd06iqz2aDHc4Bq7D2ZQMdkOMK
+vpCHpTUgKW1sHYLzqzGMURMHkqBvGA39qZ3TbdBZmZuk9QJBAJ2WoSiis3FA8YUm
+digwYxNepdyxXQu5f6DQm9HItMKK/BqmnL8x46nJbVZGednxN02mlzyDjG7lipUv
+4LfQoHMCQQCUMGf9rZB8ZhP3RNx+wz2HFfVl8b38PLaJQ6E4WFj6Xrmnx/11+B1V
+yRWbWAJZueBa3DMf4cOMtdIOsH18d/+nAkBDEhoTRnQjDqX8qqr9XeK9GrpzHJXi
+aJf2ZPL8rXSpnCfCXAk4os4ntFAxuRshdDW6ed3CZqa9iDqcVl1JPqUbAkAkyfen
+JMWv/G+MfY338mR9+teXXXJ7Al+WqDGIGXbNgWK54o5sERLHT0qL7Ed5Gwo1xGD0
+00mGz0S83NfqZKgVAkA1FRhnKSKeTIApLSF0czX+CkO5b94wvB+UEj0BBLgCZOjr
+FtM5YV3W2Q/dvCxcRie65sHIil4B7E4D7pzKf1aK
+-----END RSA PRIVATE KEY-----
+"""
+
+private_key = serialization.load_pem_private_key(
+    private_key_pem.encode(), password=None
+)
+
+print("Key loaded successfully!")
+print(private_key.decrypt)
