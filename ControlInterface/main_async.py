@@ -3,7 +3,11 @@ from asyncserial import Serial
 import base64
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
-
+from prompt_toolkit.shortcuts import input_dialog
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.application import Application
+from prompt_toolkit.layout import Layout
+from prompt_toolkit.widgets import Label, Box
 
 SEPERATOR = "\n"
 
@@ -80,6 +84,22 @@ def parse_public_key(public_key_pem: str):
         return None
 
 
+def encrypt_message(message: str, public_key_pem: str) -> bytes | None:
+    """Encrypt a message using the provided public key."""
+    public_key = parse_public_key(public_key_pem)
+    if public_key is None:
+        return None
+    try:
+        encrypted_message = public_key.encrypt(
+            message.encode("utf-8"),
+            padding.PKCS1v15(),  # PKCS#1 v1.5 padding
+        )
+        return encrypted_message
+    except Exception as e:
+        print(f"[!] Error encrypting message: {e}")
+        return None
+
+
 def decrypt_message(encrypted_message: bytes, private_key_pem: str) -> str | None:
     """Decrypt a message using the provided private key."""
     private_key = parse_private_key(private_key_pem)
@@ -95,6 +115,12 @@ def decrypt_message(encrypted_message: bytes, private_key_pem: str) -> str | Non
         print(f"[!] Error decrypting message: {e}")
         return None
 
+async def send_message(serial_connection: Serial, message: str, sep: str = SEPERATOR):
+    print(">>> Sending Encrypted Message:\n--------------{ Clear Message }\n" + message)
+    result = encrypt_message(message, public_key_pem)
+    result = base64.b64encode(result).decode("utf-8")
+    print("--------------{ Encrypted Base64 Message }\n" + result + "\n--------------|END|\n")
+    await serial_connection.write((result + sep).encode("utf-8"))
 
 def on_receive_message(b64_message: str):
     print(
@@ -120,7 +146,7 @@ def on_receive_message(b64_message: str):
     )
 
 
-async def listener_routine(serial_connection: Serial, raw_input_queue: asyncio.Queue):
+async def listen_bluetooth_routine(serial_connection: Serial, raw_input_queue: asyncio.Queue):
     """Task to read from the serial connection."""
     # await serial_connection.read()  # Drop any previously received data
     try:
@@ -133,6 +159,46 @@ async def listener_routine(serial_connection: Serial, raw_input_queue: asyncio.Q
     except asyncio.CancelledError:
         print("[!] Serial reader task cancelled. Exiting...")
         raise  # Re-raise to allow proper cleanup
+
+
+async def listen_keyboard_routine(serial_connection: Serial, sep: str = SEPERATOR):
+    async def show_dialog():
+        result = await input_dialog(
+            title="Input Dialog",
+            text="You pressed Ctrl+E! Enter some text:",
+        ).run_async()
+        if result:
+            asyncio.create_task(send_message(serial_connection, result))
+        else:
+            print("Dialog canceled.")
+
+    key_bindings = KeyBindings()
+
+    # Define Ctrl+E binding to open a dialog
+    @key_bindings.add("c-e")
+    def _(event):
+        asyncio.create_task(show_dialog())
+    @key_bindings.add("c-t")
+    def _(event):
+        asyncio.create_task(send_message(serial_connection, "led toggle"))
+    @key_bindings.add("c-d")
+    def _(event):
+        asyncio.create_task(send_message(serial_connection, "dice roll"))
+    @key_bindings.add("c-c")
+    def _(event):
+        raise KeyboardInterrupt
+
+    # Create an application to listen for key bindings
+    app = Application(
+        layout=Layout(Box(Label("Listening for Ctrl+E..."))),
+        key_bindings=key_bindings,
+        full_screen=False,
+    )
+
+    await app.run_async()
+
+
+# Function to show a dialog using prompt_toolkit
 
 
 async def read_until_seperator_routine(
@@ -165,7 +231,8 @@ async def read_until_seperator_routine(
 async def main(COM_port="COM4"):
     """Main coroutine to manage the event loop and serial connection."""
     loop = asyncio.get_running_loop()
-    input_queue = asyncio.Queue()
+    bt_received_queue = asyncio.Queue()
+    listener_task, handler_task, console_task = None, None, None
     try:
         # Replace '/dev/ttyACM0' with the appropriate serial port for your system
         serial_connection = Serial(loop, COM_port, baudrate=9600)
@@ -173,25 +240,42 @@ async def main(COM_port="COM4"):
 
         # Start the reader task
         listener_task = asyncio.create_task(
-            listener_routine(serial_connection, input_queue)
+            listen_bluetooth_routine(serial_connection, bt_received_queue)
         )
+
         handler_task = asyncio.create_task(
-            read_until_seperator_routine(serial_connection, input_queue, SEPERATOR)
+            read_until_seperator_routine(
+                serial_connection, bt_received_queue, SEPERATOR
+            )
         )
+        console_task = asyncio.create_task(listen_keyboard_routine(serial_connection))
         # Run until interrupted
         await asyncio.sleep(float("inf"))
     except KeyboardInterrupt:
         print("\n[!] KeyboardInterrupt detected. Cleaning up...")
         listener_task.cancel()  # Cancel the reader task
         handler_task.cancel()
+        console_task.cancel()
         await listener_task  # Wait for it to finish
         await handler_task
     except Exception as e:
         print(f"[!] An error occurred: {e}")
     finally:
-        print("[+] Closing serial connection...")
-        # await serial_connection.close()  # Close the serial connection
-        print("[+] Serial connection closed. Exiting.")
+        if serial_connection.is_open:
+            print("[+] Closing serial connection...")
+            await serial_connection.close()  # Close the serial connection
+            print("[+] Serial connection closed. Exiting.")
+
+        print("[+] Cleaning up...")
+        if listener_task is not None:
+            listener_task.cancel()  # Cancel the reader task
+            await listener_task  # Wait for it to finish
+        if handler_task is not None:
+            handler_task.cancel()
+            await handler_task
+        if console_task is not None:
+            console_task.cancel()
+            await console_task
 
 
 if __name__ == "__main__":

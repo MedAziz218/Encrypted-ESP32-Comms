@@ -14,6 +14,8 @@
 #error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
 #endif
 // ------------------------------------------------------------------
+const int LED_BUILTIN = 2;
+
 const String SEPERATOR = "\n";
 
 const char *private_key_pem = R"(
@@ -55,9 +57,26 @@ String base64_encode(const unsigned char *data, size_t length);
 String base64_decode(const String &encoded_string);
 // ------------------------------------------------------------------
 BluetoothSerial SerialBT;
-
+int last_dice_rool = 0;
+bool LED_STATE = false;
+void led_on()
+{
+  LED_STATE = true;
+  digitalWrite(LED_BUILTIN, HIGH);
+}
+void led_off()
+{
+  LED_STATE = false;
+  digitalWrite(LED_BUILTIN, LOW);
+}
+void led_toggle()
+{
+  LED_STATE = !LED_STATE;
+  digitalWrite(LED_BUILTIN, LED_STATE);
+}
 void setup()
 {
+  pinMode(2, OUTPUT);
   Serial.begin(9600);
   SerialBT.begin("ESP32"); // Bluetooth device name
   Serial.println("The device started, now you can pair it with bluetooth!");
@@ -106,7 +125,7 @@ void send_message(const String &msg_to_send)
   }
   else
   {
-    Serial.println("Failed to encrypt message.");
+    Serial.println("\nFailed to encrypt message.");
   }
 }
 void on_receive_message(const String &msg_received)
@@ -116,12 +135,45 @@ void on_receive_message(const String &msg_received)
   if (!decrypted_message.isEmpty())
   {
     Serial.println("\n--------------{ Clear Message }\n" + decrypted_message + "\n--------------|END|\n\n");
+    decrypted_message.toLowerCase() ;
+    if (decrypted_message == "led state")
+    {
+      send_message("Accepted: led state is " + String(LED_STATE));
+
+    }
+    else if (decrypted_message == "led toggle")
+    {
+      led_toggle();
+      send_message("Accepted: led toggle");
+    }
+    else if (decrypted_message == "led on")
+    {
+      led_on();
+      send_message("Accepted: led on");
+    }
+    else if (decrypted_message == "led off")
+    {
+      led_off();
+      send_message("Accepted: led off");
+    }
+    else if (decrypted_message == "dice roll") {
+      last_dice_rool = random(1, 7);
+      send_message("Accepted: dice roll gives " + String(last_dice_rool));
+    }
+    else if (decrypted_message == "dice last") {
+      send_message("Accepted: last dice result was " + String(last_dice_rool));
+    }
+    else
+    {
+      send_message("Rejected: invalid command");
+    }
   }
   else
   {
-    Serial.println("Failed to decrypt message.");
+    Serial.println("\nFailed to decrypt message.");
   }
 }
+
 
 String encrypt_message(const String &message, const char *public_key_pem)
 {
@@ -138,7 +190,7 @@ String encrypt_message(const String &message, const char *public_key_pem)
 
   if (mbedtls_pk_parse_public_key(&pk, (const unsigned char *)public_key_pem, strlen(public_key_pem) + 1) != 0)
   {
-    Serial.println("Failed to parse public key.");
+    Serial.println("\nFailed to parse public key.");
     return "";
   }
 
@@ -169,7 +221,7 @@ String decrypt_message(const String &encrypted_base64_message, const char *priva
 
   if (mbedtls_pk_parse_key(&pk, (const unsigned char *)private_key_pem, strlen(private_key_pem) + 1, nullptr, 0) != 0)
   {
-    Serial.println("Failed to parse private key.");
+    Serial.println("\nFailed to parse private key.");
     return "";
   }
 
